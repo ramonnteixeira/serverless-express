@@ -1,0 +1,92 @@
+service: todo-list-function
+app: todo-list
+
+plugins:
+  - serverless-dynamodb-local
+  - serverless-offline
+
+custom:
+  dynamodb:
+    stages:
+      - local
+    start:
+      port: 8000
+      inMemory: true
+      heapInitial: 200m
+      heapMax: 1g
+      migrate: true
+      convertEmptyValues: true
+
+provider:
+  name: aws
+  runtime: nodejs10.x
+  region: us-east-1
+  stackName: todo-list-stack
+  memorySize: 128
+  timeout: 2
+  logRetentionInDays: 3
+  stage: dev
+  apiName: ServerlessRestApi
+
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - dynamodb:Query
+        - dynamodb:Scan
+        - dynamodb:GetItem
+        - dynamodb:PutItem
+        - dynamodb:UpdateItem
+        - dynamodb:DeleteItem
+      Resource:
+        - { "Fn::GetAtt": ["TodoDynamoDBTable", "Arn" ] }
+
+functions:
+  app:
+    handler: index.handler
+    events:
+      - http: ANY /
+      - http: 'ANY {proxy+}'
+
+resources:
+  Resources:
+    TodoDynamoDBTable:
+      Type: 'AWS::DynamoDB::Table'
+      Properties:
+        AttributeDefinitions:
+          -
+            AttributeName: _id
+            AttributeType: S
+        KeySchema:
+          -
+            AttributeName: _id
+            KeyType: HASH
+        ProvisionedThroughput:
+          ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
+        TableName: todo
+
+    ApiGatewayCustomName:
+        Type: AWS::ApiGateway::DomainName
+        Properties:
+          CertificateArn: arn:aws:acm:us-east-1:900637626098:certificate/ec621460-f71d-4a87-9ce2-027206c7f8c4
+          DomainName: olokinho.ml
+    ApiMapping:
+        Type: 'AWS::ApiGateway::BasePathMapping'
+        DependsOn: [ApiGatewayRestApi]
+        Properties:
+          BasePath: ''
+          DomainName: !Ref ApiGatewayCustomName
+          RestApiId: !Ref ApiGatewayRestApi
+          Stage: dev
+    Route53Api:
+        Type: AWS::Route53::RecordSetGroup
+        Properties:
+          HostedZoneName: olokinho.ml.
+          Comment: Alias para API Gateway.
+          RecordSets:
+          - Name: olokinho.ml.
+            Type: A
+            AliasTarget:
+              EvaluateTargetHealth: false
+              HostedZoneId: !GetAtt ApiGatewayCustomName.DistributionHostedZoneId
+              DNSName: !GetAtt ApiGatewayCustomName.DistributionDomainName
